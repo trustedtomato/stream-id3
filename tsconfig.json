@@ -1,0 +1,14 @@
+{
+	"compilerOptions": {
+		"target": "es5",
+		"lib": [
+			"esnext"
+		],
+		"noImplicitAny": true,
+		"declaration": true,
+		"outDir": "lib"
+	},
+	"include": [
+		"src"
+	]
+}

@@ -1,0 +1,17 @@
+{
+  "name": "id3",
+  "version": "1.0.0",
+  "description": "ID3 parser & writer",
+  "main": "lib/index.js",
+  "scripts": {
+    "watch": "tsc --watch"
+  },
+  "author": "Halasi Tamás <trusted.tomato@gmail.com>",
+  "license": "ISC",
+  "types": "./lib",
+  "devDependencies": {
+    "@types/node": "^8.0.20",
+    "musicmetadata": "^2.0.5",
+    "typescript": "^2.4.2"
+  }
+}
