@@ -1,6 +1,6 @@
 {
   "name": "stream-id3",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A fast & easy-to-use library for reading ID3.",
   "main": "lib/index.js",
   "scripts": {
