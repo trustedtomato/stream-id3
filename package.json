@@ -1,17 +1,35 @@
 {
-  "name": "id3",
-  "version": "1.0.0",
+  "name": "stream-id3",
+  "version": "0.0.1",
   "description": "ID3 parser & writer",
   "main": "lib/index.js",
   "scripts": {
-    "watch": "tsc --watch"
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "benchmark": "node benchmark/benchmark.js",
+    "test": "jest",
+    "preversion": "npm build && npm test",
+    "postversion": "git push && git push --tags && npm publish"
   },
   "author": "Halasi Tamás <trusted.tomato@gmail.com>",
-  "license": "ISC",
   "types": "./lib",
   "devDependencies": {
     "@types/node": "^8.0.20",
+    "jest": "^21.0.2",
     "musicmetadata": "^2.0.5",
     "typescript": "^2.4.2"
-  }
+  },
+  "dependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/trustedtomato/musictag.git"
+  },
+  "keywords": [
+    "stream",
+    "id3"
+  ],
+  "bugs": {
+    "url": "https://github.com/trustedtomato/musictag/issues"
+  },
+  "homepage": "https://github.com/trustedtomato/musictag#readme"
 }

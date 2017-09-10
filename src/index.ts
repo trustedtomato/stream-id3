@@ -9,8 +9,29 @@ export interface EventEmitterOn<T, V>{
 	emit(type:T, data:V):void
 }
 
+export interface Frame{
+	id:string
+	
+	value?:string
+	buffer?:Buffer
+	url?:string
+
+	descriptor?:string
+	mimeType?:string
+	description?:string
+}
+
 
 /*--- useful functions ---*/
+const hasOwnProperty = (target:object, name:string) => Object.prototype.hasOwnProperty.call(target, name);
+
+const defaultToObject = {
+	get: (target:{[key:string]:object}, name:string) =>
+		!hasOwnProperty(target, name)
+		? {}
+		: target[name]
+};
+
 const decode = (buf:Buffer, encoding:string) => {
 	switch(encoding){
 		case 'utf16be':
@@ -60,7 +81,7 @@ const parseFrameEncoding = (frame:Buffer) => {
 
 const syncSafeIntToInt = (x:number) => (x & 0b1111111) + ((x & 0b111111100000000) >>> 1);
 
-const decodeFrame = (id:string, frame:Buffer) => {	
+const decodeFrame = (id:string, frame:Buffer):Frame => {	
 	if(id === 'TXXX'){
 		const {encoding, encodingOffset} = parseFrameEncoding(frame);
 
@@ -119,18 +140,18 @@ const decodeFrame = (id:string, frame:Buffer) => {
 
 
 	else{
-		return {id, value: frame};
+		return {id, buffer: frame};
 	}
 };
 
 
 
 /*--- parsing the tag ---*/
-export type Parser = EventEmitterOn<'frame', {id:string, [key:string]:any}> & EventEmitter;
+export type Parser = EventEmitterOn<'frame', Frame> & EventEmitter;
 
-export function streamTag(input:ReadStream|string):Parser
-export function streamTag(input:ReadStream|string, needed:string[]|true):Promise<Map<string,any>>
-export function streamTag(input:ReadStream|string, needed?:string[]|true):Parser|Promise<Map<string,any>>{
+export function readId3(input:ReadStream|string, parser:true):Parser
+export function readId3(input:ReadStream|string, needed?:string[]):Promise<{[id:string]:Frame}>
+export function readId3(input:ReadStream|string, needed?:string[]|true):Parser|Promise<{[id:string]:Frame}>{
 	const parser:Parser = new EventEmitter();
 	const stream = 
 		typeof input === 'string'
@@ -250,19 +271,33 @@ export function streamTag(input:ReadStream|string, needed?:string[]|true):Parser
 	if(Array.isArray(needed)){
 		return new Promise((resolve, reject) => {
 			const leftNeeded = new Set(needed);
-			const result:Map<string,any> = new Map();
+			const result:{[id:string]:Frame} = new Proxy(Object.create(null), defaultToObject);
 			parser.on('frame', x => {
 				if(leftNeeded.delete(x.id)){
-					result.set(x.id, x);
+					result[x.id] = x;
 				}
 				if(typeof x.descriptor === 'string'){
 					const actualId = x.id + ':' + x.descriptor;
 					if(leftNeeded.delete(actualId)){
-						result.set(actualId, x);
+						result[actualId] = x;
 					}
 				}
 				if(leftNeeded.size === 0){
 					parser.emit('end');
+				}
+			});
+			parser.on('end', () => {
+				resolve(result);
+			});
+		});
+	}else if(typeof needed === 'undefined'){
+		return new Promise((resolve, reject) => {
+			const result:{[id:string]:Frame} = new Proxy(Object.create(null), defaultToObject);
+			parser.on('frame', x => {
+				result[x.id] = x;
+				if(typeof x.descriptor === 'string'){
+					const actualId = x.id + ':' + x.descriptor;
+					result[actualId] = x;
 				}
 			});
 			parser.on('end', () => {

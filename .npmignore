@@ -1,0 +1,8 @@
+node_modules/
+src/
+benchmark/
+mp3/
+tests/
+.gitignore
+package-lock.json
+tsconfig.json
