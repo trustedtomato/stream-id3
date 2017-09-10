@@ -8,7 +8,7 @@
     "watch": "tsc --watch",
     "benchmark": "node benchmark/benchmark.js",
     "test": "jest",
-    "preversion": "npm build && npm test",
+    "preversion": "npm run build && npm test",
     "postversion": "git push && git push --tags && npm publish"
   },
   "author": "Halasi Tamás <trusted.tomato@gmail.com>",
