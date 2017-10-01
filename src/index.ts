@@ -12,13 +12,17 @@ export interface EventEmitterOn<T, V>{
 export interface Frame{
 	id:string
 	
-	value?:string
+	text?:string
+	syncText?:[number, string][]
 	buffer?:Buffer
-	url?:string
+	url?:string,
 
 	descriptor?:string
+	type?:string
 	mimeType?:string
 	description?:string
+	languageCode?:string
+	timeStampFormat?:string
 }
 
 
@@ -33,6 +37,17 @@ const defaultToObject = {
 };
 
 const decode = (buf:Buffer, encoding:string) => {
+	if(encoding === 'utf16'){
+		if(buf[0] === 0xFE && buf[1] === 0xFF){
+			encoding = 'utf16be';
+			buf = buf.slice(2);
+		}else if(buf[1] === 0xFE && buf[0] === 0xFF){
+			encoding = 'utf16le';
+			buf = buf.slice(2);
+		}else{
+			encoding = 'utf16be';
+		}
+	}
 	switch(encoding){
 		case 'utf16be':
 			if(buf.length === 0) return '';
@@ -48,67 +63,46 @@ const decode = (buf:Buffer, encoding:string) => {
 	}
 };
 
-const parseFrameEncoding = (frame:Buffer) => {
-	let encoding;
-	let encodingOffset;
-	
-	if(frame[0] === 0){ // ISO-8859-1 is a part of ASCII, so it can be used
-		encoding = 'ascii';
-		encodingOffset = 1;
-	}else if(frame[0] === 1){ // UTF-16 encoding is used
-		if(frame[1] === 0xFE && frame[2] === 0xFF){
-			encoding = 'utf16be';
-		}else{
-			encoding = 'utf16le';
-		}
-		encodingOffset = 3;
-	}else if(frame[0] === 2){
-		encoding = 'utf16be';
-		encodingOffset = 1;
-	}else if(frame[0] === 3){
-		encoding = 'utf8';
-		encodingOffset = 1;
-	}else{
-		encoding = 'ascii';
-		encodingOffset = 0;
-	}
+const unicodeTerminator = Buffer.from([0, 0]);
+const asciiTerminator = Buffer.from([0]);
 
-	return{
-		encoding,
-		encodingOffset
-	};
-};
+const parseFrameEncoding = (frame:Buffer) => 
+	frame[0] === 0 ? {encoding: 'ascii', terminator: asciiTerminator}
+	: frame[0] === 1 ? {encoding: 'utf16', terminator: unicodeTerminator}
+	: frame[0] === 2 ? {encoding: 'utf16be', terminator: unicodeTerminator}
+	: frame[0] === 3 ? {encoding: 'utf8', terminator: asciiTerminator}
+	: {encoding: 'ascii', terminator: asciiTerminator};
 
 const syncSafeIntToInt = (x:number) => (x & 0b1111111) + ((x & 0b111111100000000) >>> 1);
 
 const decodeFrame = (id:string, frame:Buffer):Frame => {	
 	if(id === 'TXXX'){
-		const {encoding, encodingOffset} = parseFrameEncoding(frame);
+		const {encoding, terminator} = parseFrameEncoding(frame);
 
-		const descriptorEndIndex = frame.indexOf(0, encodingOffset);
-		const descriptor = decode(frame.slice(encodingOffset, descriptorEndIndex), encoding);
+		const descriptorEndIndex = frame.indexOf(terminator, 1) + terminator.length;
+		const descriptor = decode(frame.slice(1, descriptorEndIndex - terminator.length), encoding);
 		
-		const value = decode(frame.slice(descriptorEndIndex + 1), encoding);
+		const text = decode(frame.slice(descriptorEndIndex), encoding);
 		
-		return {id, descriptor, value};
+		return {id, descriptor, text};
 	}
 
 
 	else if(id.startsWith('T')){
-		const {encoding, encodingOffset} = parseFrameEncoding(frame);
-		const value = decode(frame.slice(encodingOffset), encoding);
+		const {encoding} = parseFrameEncoding(frame);
+		const text = decode(frame.slice(1), encoding);
 
-		return {id, value};
+		return {id, text};
 	}
 
 
 	else if(id === 'WXXX'){
-		const {encoding, encodingOffset} = parseFrameEncoding(frame);
+		const {encoding, terminator} = parseFrameEncoding(frame);
 
-		const descriptorEndIndex = frame.indexOf(0, encodingOffset);
-		const descriptor = decode(frame.slice(encodingOffset, descriptorEndIndex), encoding);
+		const descriptorEndIndex = frame.indexOf(terminator, 1) + terminator.length;
+		const descriptor = decode(frame.slice(1, descriptorEndIndex - terminator.length), encoding);
 
-		const url = decode(frame.slice(descriptorEndIndex + 1), 'ascii');
+		const url = decode(frame.slice(descriptorEndIndex), 'ascii');
 		
 		return {id, descriptor, url};
 	}
@@ -119,18 +113,60 @@ const decodeFrame = (id:string, frame:Buffer):Frame => {
 		
 		return {id, url};
 	}
+
+
+	else if(id === 'USLT'){
+		const {encoding, terminator} = parseFrameEncoding(frame);
+		
+		const languageCode = decode(frame.slice(1, 4), 'ascii');
+		
+		const descriptorEndIndex = frame.indexOf(terminator, 4) + terminator.length;
+		const descriptor = decode(frame.slice(4, descriptorEndIndex - terminator.length), encoding);
+
+		const text = decode(frame.slice(descriptorEndIndex), encoding);
+
+		return {id, languageCode, descriptor, text};
+	}
+
+
+	else if(id === 'SYLT'){
+		const {encoding, terminator} = parseFrameEncoding(frame);
+		
+		const languageCode = frame.toString('ascii', 1, 4);
+		const timeStampFormat = frame.toString('hex', 4, 5);
+		const lengthOfBytes = timeStampFormat === '01' || timeStampFormat === '02' ? 4 : 0;
+		const type = frame.toString('hex', 5, 6);
+		const descriptorEndIndex = frame.indexOf(terminator, 6) + terminator.length;
+		const descriptor = decode(frame.slice(6, descriptorEndIndex - terminator.length), encoding);
+
+		const syncText:[number, string][] = [];
+		let unprocessedLyrics = frame.slice(descriptorEndIndex);
+		while(unprocessedLyrics.length){
+
+			const textEnd = unprocessedLyrics.indexOf(terminator) + terminator.length;
+			const text = decode(unprocessedLyrics.slice(0, textEnd - terminator.length), encoding);
+
+			const timeStampBytes = unprocessedLyrics.slice(textEnd, textEnd + lengthOfBytes);
+			const timeStamp = timeStampBytes.readUIntBE(0, timeStampBytes.length);
+
+			syncText.push([timeStamp, text])
+			unprocessedLyrics = unprocessedLyrics.slice(textEnd + lengthOfBytes);
+		}
+
+		return {id, syncText, type, descriptor, languageCode, timeStampFormat};
+	}
 	
 	
 	else if(id === 'APIC'){
-		const {encoding, encodingOffset} = parseFrameEncoding(frame);
+		const {encoding, terminator} = parseFrameEncoding(frame);
 
-		const mimeTypeEndIndex = frame.indexOf(0, encodingOffset);
-		const mimeType = decode(frame.slice(encodingOffset, mimeTypeEndIndex), encoding);
+		const mimeTypeEndIndex = frame.indexOf(terminator, 1);
+		const mimeType = decode(frame.slice(1, mimeTypeEndIndex), encoding);
 
-		const descriptorEndIndex = mimeTypeEndIndex + 2;
-		const descriptor = frame.slice(mimeTypeEndIndex + 1, descriptorEndIndex).toString('hex');
+		const descriptorEndIndex = mimeTypeEndIndex + terminator.length + 1;
+		const descriptor = frame.slice(mimeTypeEndIndex + terminator.length, descriptorEndIndex).toString('hex');
 
-		const descriptionEndIndex = frame.indexOf(0, descriptorEndIndex);
+		const descriptionEndIndex = frame.indexOf(terminator, descriptorEndIndex);
 		const description = decode(frame.slice(descriptorEndIndex, descriptionEndIndex), encoding);
 
 		const buffer = frame.slice(descriptionEndIndex + 1);
@@ -276,12 +312,23 @@ export function readId3(input:ReadStream|string, needed?:string[]|true):Parser|P
 				if(leftNeeded.delete(x.id)){
 					result[x.id] = x;
 				}
-				if(typeof x.descriptor === 'string'){
+				if(typeof x.type === 'string'){
+					const actualId = x.id + ':' + x.type;
+					if(leftNeeded.delete(actualId)){
+						result[actualId] = x;
+					}
+					if(typeof x.descriptor === 'string'){
+						const actualId2 = actualId + ':' + x.descriptor;
+						if(leftNeeded.delete(actualId2)){
+							result[actualId2] = x;
+						}
+					}
+				}else if(typeof x.descriptor === 'string'){
 					const actualId = x.id + ':' + x.descriptor;
 					if(leftNeeded.delete(actualId)){
 						result[actualId] = x;
 					}
-				}
+				} 
 				if(leftNeeded.size === 0){
 					parser.emit('end');
 				}
