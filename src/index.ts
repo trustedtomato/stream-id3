@@ -186,8 +186,8 @@ const decodeFrame = (id:string, frame:Buffer):Frame => {
 export type Parser = EventEmitterOn<'frame', Frame> & EventEmitter;
 
 export function readId3(input:ReadStream|string, parser:true):Parser
-export function readId3(input:ReadStream|string, needed?:string[]):Promise<{[id:string]:Frame}>
-export function readId3(input:ReadStream|string, needed?:string[]|true):Parser|Promise<{[id:string]:Frame}>{
+export function readId3(input:ReadStream|string, needed?:string[]):Promise<Map<string,Frame>>
+export function readId3(input:ReadStream|string, needed?:string[]|true):Parser|Promise<Map<string,Frame>>{
 	const parser:Parser = new EventEmitter();
 	const stream = 
 		typeof input === 'string'
@@ -307,26 +307,26 @@ export function readId3(input:ReadStream|string, needed?:string[]|true):Parser|P
 	if(Array.isArray(needed)){
 		return new Promise((resolve, reject) => {
 			const leftNeeded = new Set(needed);
-			const result:{[id:string]:Frame} = new Proxy(Object.create(null), defaultToObject);
+			const result:Map<string,Frame> = new Map();
 			parser.on('frame', x => {
 				if(leftNeeded.delete(x.id)){
-					result[x.id] = x;
+					result.set(x.id, x);
 				}
 				if(typeof x.type === 'string'){
 					const actualId = x.id + ':' + x.type;
 					if(leftNeeded.delete(actualId)){
-						result[actualId] = x;
+						result.set(actualId, x);
 					}
 					if(typeof x.descriptor === 'string'){
 						const actualId2 = actualId + ':' + x.descriptor;
 						if(leftNeeded.delete(actualId2)){
-							result[actualId2] = x;
+							result.set(actualId2, x);
 						}
 					}
 				}else if(typeof x.descriptor === 'string'){
 					const actualId = x.id + ':' + x.descriptor;
 					if(leftNeeded.delete(actualId)){
-						result[actualId] = x;
+						result.set(actualId, x);
 					}
 				} 
 				if(leftNeeded.size === 0){
@@ -339,12 +339,12 @@ export function readId3(input:ReadStream|string, needed?:string[]|true):Parser|P
 		});
 	}else if(typeof needed === 'undefined'){
 		return new Promise((resolve, reject) => {
-			const result:{[id:string]:Frame} = new Proxy(Object.create(null), defaultToObject);
+			const result:Map<string,Frame> = new Map();
 			parser.on('frame', x => {
-				result[x.id] = x;
+				result.set(x.id, x);
 				if(typeof x.descriptor === 'string'){
 					const actualId = x.id + ':' + x.descriptor;
-					result[actualId] = x;
+					result.set(actualId, x);
 				}
 			});
 			parser.on('end', () => {
